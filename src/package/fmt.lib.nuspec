@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>fmt.lib</id>
+    <version>0.0.1-alpha</version>
+    <description>{fmt} is an open-source formatting library providing a fast and safe alternative to C stdio and C++ iostreams.</description>
+    <authors>{fmt} authors</authors>
+    <title>{fmt} formatting library</title>
+    <tags>C++ c++ fmt format string printf formatting native Native</tags>
+    <projectUrl>https://github.com/fmtlib/fmt</projectUrl>
+    <license type="file">LICENSE.txt</license>
+    <icon>images\icon.png</icon>
+    <readme>docs\readme.md</readme>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <developmentDependency>true</developmentDependency>
+    <releaseNotes></releaseNotes>
+    <copyright>© 2012 - present, Victor Zverovich</copyright>
+  </metadata>
+  <files>
+    <file src="images\*.png" target="images"/>
+    <file src="build\*.targets" target="build"/>
+    <file src="..\..\bin\x86\*.lib" target="build\native\x86"/>
+    <file src="..\..\bin\x64\*.lib" target="build\native\x64"/>
+    <file src="..\..\bin\include\*" target="build\native\include\fmt"/>
+    <file src="..\..\bin\content\LICENSE.txt" target="LICENSE.txt"/>
+    <file src="..\..\bin\content\readme.md" target="docs\readme.md"/>
+  </files>
+</package>

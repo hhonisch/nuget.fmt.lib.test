@@ -1,0 +1,65 @@
+name: Build
+
+on: [push, workflow_dispatch]
+
+jobs:
+  
+  # Build main artifacts
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        vstools: [v140, v141, v142, v143]
+  
+    runs-on: windows-2022
+
+    steps:
+      # Output run ID - in case we need it to release the artifacts. 
+      # For information, also dump entire GitHub context.
+      - name: "Current run ID ${{github.run_id}}: Dump Context"
+        env:
+          GITHUB_CONTEXT: ${{toJson(github)}}
+        run: |
+          echo "Run ID: ${{github.run_id}}"
+          echo ${env:GITHUB_CONTEXT}
+
+      # Checkout source tree
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # We need msbuild
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1
+       
+      # Install VS2015 build tools 
+      - name: Install VS2015 build tools
+        if: ${{ matrix.vstools == 'v140' }}
+        shell: pwsh
+        run: |
+            Write-Host "Running vswhere to get info about installed Visual Studio instances"
+            [xml]$vsInfo = vswhere -latest -format xml
+            $vsInstallerPath = $vsInfo.instances.instance.properties.setupEngineFilePath
+            Write-Host "Setup path: $vsInstallerPath"
+            $vsInstallDir = $vsInfo.instances.instance.installationPath
+            Write-Host "Install dir: $vsInstallDir"
+            $installerArgs = @("modify", "--installPath", "`"$vsInstallDir`"", "--add", "Microsoft.VisualStudio.Component.VC.140", "--downloadThenInstall", "--quiet")
+            Write-Host "Starting VS installer: `"$vsInstallerPath`" " + ($installerArgs -join " ")
+            $process = Start-Process $vsInstallerPath $installerArgs -Wait -PassThru
+            Write-Host "VS installer exit code: $($process.ExitCode)"
+            if ($process.ExitCode -ne 0) {
+                throw "Error: Installing Visual Studio build tools 2015 failed"
+            }
+      #  run: .\build\github_build_helper.ps1 InstallVsBuildTools2015
+       
+      # Build artifacts
+      - name: Build
+        run: msbuild .\build\build.proj /t:GithubBuild /p:SkipTests=true /p:VsBuildTools=${{matrix.vstools}}
+
+      # Upload arifacts to make them available for next job
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Dist-${{matrix.vstools}}
+          path: |
+            ./dist/*
+            !./dist/.keep

@@ -1,0 +1,167 @@
+<Project DefaultTargets="Clean;Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <BinDir>$(MSBuildProjectDirectory)\..\bin</BinDir>
+    <DistDir>$(MSBuildProjectDirectory)\..\dist</DistDir>
+    <PackageDir>$(MSBuildProjectDirectory)\..\src\package</PackageDir>
+    <SourceDir>$(MSBuildProjectDirectory)\..\src</SourceDir>
+    <TestRootDir>$(MSBuildProjectDirectory)\..\test</TestRootDir>
+    <SkipTests>false</SkipTests>
+    <VsBuildTools></VsBuildTools>
+    <FmtVersion>9.1.0</FmtVersion>
+    <FmtDownloadUrl>https://github.com/fmtlib/fmt/releases/download/$(FmtVersion)/fmt-$(FmtVersion).zip</FmtDownloadUrl>
+    <FmtDownloadZip>$(SourceDir)\fmt-$(FmtVersion).zip</FmtDownloadZip>
+    <FmtSourceDir>$(SourceDir)\fmt-$(FmtVersion)</FmtSourceDir>
+    <FmtBuildDirX86>$(SourceDir)\fmt-$(FmtVersion)\build_x86</FmtBuildDirX86>
+    <FmtBuildDirX64>$(SourceDir)\fmt-$(FmtVersion)\build_x64</FmtBuildDirX64>
+  </PropertyGroup>
+
+
+  <!-- Clean dist files -->
+  <Target Name="CleanDist">
+    <ItemGroup>
+      <CleanDist_Files Include="$(DistDir)\*.nupkg"/>
+    </ItemGroup>
+    <Delete Files="@(CleanDist_Files)"/>
+  </Target>
+
+  <!-- Clean bin files -->
+  <Target Name="CleanBin">
+    <ItemGroup>
+      <CleanBin_Files Include="$(BinDir)\*" Exclude="$(BinDir)\*.keep"/>
+    </ItemGroup>
+    <Delete Files="@(CleanBin_Files)"/>
+    <RemoveDir Directories="$(FmtSourceDir);$(BinDir)\content;$(BinDir)\include;$(BinDir)\x86;$(BinDir)\x64"/>
+  </Target>
+
+  <!-- Clean package files -->
+  <Target Name="CleanPackage">
+    <ItemGroup>
+      <CleanPackage_Files Include="$(PackageDir)\*.nupkg"/>
+    </ItemGroup>
+    <Delete Files="@(CleanPackage_Files)"/>
+  </Target>
+
+  <!-- Clean FMT sources -->
+  <Target Name="CleanFmtSrc">
+    <RemoveDir Directories="$(FmtSourceDir)" />
+  </Target>
+
+  <!-- Clean everything -->
+  <Target Name="Clean" DependsOnTargets="CleanDist;CleanBin;CleanPackage;CleanFmtSrc"/>
+
+
+  <!-- Get FMT sources -->
+  <Target Name="GetFmtSrc">
+    <!-- Download FMT sources -->
+    <Exec Command="powershell.exe –NonInteractive –ExecutionPolicy Unrestricted -Command &quot;Invoke-WebRequest $(FmtDownloadUrl) -Outfile &#39;$(FmtDownloadZip)&#39;&quot;" Condition="!Exists('$(FmtDownloadZip)')" />
+    
+    <!-- Unzip sources -->
+    <Unzip SourceFiles="$(FmtDownloadZip)" DestinationFolder="$(SourceDir)" />
+  </Target>
+
+
+  <!-- Build Package -->
+  <Target Name="BuildPackage">
+    <!-- Run Chocolatey -->
+    <Exec Command="nuget pack" WorkingDirectory="$(PackageDir)"/>
+    <ItemGroup>
+      <PackageFiles Include="$(PackageDir)\*.nupkg"/>
+    </ItemGroup>
+    <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(DistDir)"/>
+  </Target>
+
+  <!-- Build everything -->
+  <Target Name="Build" DependsOnTargets="GetFmtSrc;BuildFmt;TestFmt;ExportFmt;BuildPackage"/>
+
+  <!-- Build FMT -->
+  <Target Name="BuildFmt">
+    <!-- Generate build systems -->
+    <PropertyGroup>
+      <BuildFmt_ToolsSet Condition="'$(VsBuildTools)'!=''">-T $(VsBuildTools)</BuildFmt_ToolsSet>
+    </PropertyGroup>
+    <Exec Command="cmake -A Win32 -S &quot;$(FmtSourceDir)&quot; -B &quot;$(FmtBuildDirX86)&quot; $(BuildFmt_ToolsSet)"/>
+    <Exec Command="cmake -A x64 -S &quot;$(FmtSourceDir)&quot; -B &quot;$(FmtBuildDirX64)&quot; $(BuildFmt_ToolsSet)"/>
+    
+    <!-- Set build configurations -->
+    <ItemGroup>
+      <!-- x86 with tests -->
+      <BuildFmt_Confs Include="$(FmtBuildDirX86)\ALL_BUILD.vcxproj" Condition="'$(SkipTests)'!='true'">
+        <Properties>Configuration=Release;Platform=x86</Properties>
+      </BuildFmt_Confs>
+      <BuildFmt_Confs Include="$(FmtBuildDirX86)\ALL_BUILD.vcxproj" Condition="'$(SkipTests)'!='true'">
+        <Properties>Configuration=Debug;Platform=x86</Properties>
+      </BuildFmt_Confs>
+      <!-- x64 with tests -->
+      <BuildFmt_Confs Include="$(FmtBuildDirX64)\ALL_BUILD.vcxproj" Condition="'$(SkipTests)'!='true'">
+        <Properties>Configuration=Release;Platform=x64</Properties>
+      </BuildFmt_Confs>
+      <BuildFmt_Confs Include="$(FmtBuildDirX64)\ALL_BUILD.vcxproj" Condition="'$(SkipTests)'!='true'">
+        <Properties>Configuration=Debug;Platform=x64</Properties>
+      </BuildFmt_Confs>
+
+      <!-- x86 w/o tests -->
+      <BuildFmt_Confs Include="$(FmtBuildDirX86)\fmt.vcxproj" Condition="'$(SkipTests)'=='true'">
+        <Properties>Configuration=Release;Platform=x86</Properties>
+      </BuildFmt_Confs>
+      <BuildFmt_Confs Include="$(FmtBuildDirX86)\fmt.vcxproj" Condition="'$(SkipTests)'=='true'">
+        <Properties>Configuration=Debug;Platform=x86</Properties>
+      </BuildFmt_Confs>
+      <!-- x64 w/o tests -->
+      <BuildFmt_Confs Include="$(FmtBuildDirX64)\fmt.vcxproj" Condition="'$(SkipTests)'=='true'">
+        <Properties>Configuration=Release;Platform=x64</Properties>
+      </BuildFmt_Confs>
+      <BuildFmt_Confs Include="$(FmtBuildDirX64)\fmt.vcxproj" Condition="'$(SkipTests)'=='true'">
+        <Properties>Configuration=Debug;Platform=x64</Properties>
+      </BuildFmt_Confs>
+    </ItemGroup>
+    
+    <!-- Build -->
+    <MSBuild Projects="@(BuildFmt_Confs)" Targets="Build" BuildInParallel="true"/>
+  </Target>
+
+  <!-- Test FMT -->
+  <Target Name="TestFmt" DependsOnTargets="BuildFmt" Condition="'$(SkipTests)'!='true'">
+    <!-- Set test configurations -->
+    <ItemGroup>
+      <!-- x86 -->
+      <TestFmt_Confs Include="$(FmtBuildDirX86)\RUN_TESTS.vcxproj">
+        <Properties>Configuration=Release;Platform=x86</Properties>
+      </TestFmt_Confs>
+      <TestFmt_Confs Include="$(FmtBuildDirX86)\RUN_TESTS.vcxproj">
+        <Properties>Configuration=Debug;Platform=x86</Properties>
+      </TestFmt_Confs>
+      <!-- x64 -->
+      <TestFmt_Confs Include="$(FmtBuildDirX64)\RUN_TESTS.vcxproj">
+        <Properties>Configuration=Release;Platform=x64</Properties>
+      </TestFmt_Confs>
+      <TestFmt_Confs Include="$(FmtBuildDirX64)\RUN_TESTS.vcxproj">
+        <Properties>Configuration=Debug;Platform=x64</Properties>
+      </TestFmt_Confs>
+    </ItemGroup>
+    
+    <!-- Run tests -->
+    <MSBuild Projects="@(TestFmt_Confs)" Targets="Build" BuildInParallel="true"/>
+  </Target>
+  
+  <!-- Export files for nuget package -->
+  <Target Name="ExportFmt">
+    <ItemGroup>
+      <ExportFmt_LibsX86 Include="$(FmtBuildDirX86)\Debug\*.lib"/>
+      <ExportFmt_LibsX86 Include="$(FmtBuildDirX86)\Release\*.lib"/>
+      <ExportFmt_LibsX64 Include="$(FmtBuildDirX64)\Debug\*.lib"/>
+      <ExportFmt_LibsX64 Include="$(FmtBuildDirX64)\Release\*.lib"/>
+      <ExportFmt_Headers Include="$(FmtSourceDir)\include\fmt\*.h"/>
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(ExportFmt_LibsX86)" DestinationFolder="$(BinDir)\x86"/>
+    <Copy SourceFiles="@(ExportFmt_LibsX64)" DestinationFolder="$(BinDir)\x64"/>
+    <Copy SourceFiles="@(ExportFmt_Headers)" DestinationFolder="$(BinDir)\include"/>
+    <Copy SourceFiles="$(FmtSourceDir)\README.rst" DestinationFiles="$(BinDir)\content\readme.md"/>
+    <Copy SourceFiles="$(FmtSourceDir)\LICENSE.rst" DestinationFiles="$(BinDir)\content\LICENSE.txt"/>
+  </Target>
+
+  <!-- Github Build -->
+  <Target Name="GithubBuild" DependsOnTargets="Build"/>
+ 
+</Project>
