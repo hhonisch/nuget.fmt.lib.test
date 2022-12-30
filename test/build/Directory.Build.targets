@@ -1,0 +1,3 @@
+<Project>
+  <Import Project="packages\fmt.lib.0.0.1-alpha\build\fmt.lib.targets" />
+</Project>
