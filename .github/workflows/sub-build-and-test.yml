@@ -1,0 +1,125 @@
+############################################################
+# Reusable workflow for building and testing with given set of VS build tools
+############################################################
+name: Sub-Workflow Build and Test
+
+on: 
+  workflow_call:
+    inputs:
+      # Version of Visual Studio build tools to use: 14.0, 14.1, 14.2, 14.3 
+      vs-build-tools:
+        required: true
+        type: string
+      # Suffix for nuget package 
+      pkg-suffix:
+        required: true
+        type: string
+      # Build number
+      build-no:
+        required: true
+        type: string
+ 
+jobs:
+  
+  # Build nuget package
+  build:
+          
+    runs-on: windows-2022
+
+    steps:
+      # Output run ID - in case we need it to release the artifacts. 
+      # For information, also dump entire GitHub context.
+      - name: "Current run ID ${{github.run_id}}: Dump Context"
+        env:
+          GITHUB_CONTEXT: ${{toJson(github)}}
+        run: |
+          echo "Run ID: ${{github.run_id}}"
+          echo "Build No: ${{inputs.build-no}}"
+          echo ${env:GITHUB_CONTEXT}
+
+      # Checkout source tree
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # We need msbuild
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1
+       
+      # Install MSVC build tools
+      - name: Install MSVC ${{inputs.vs-build-tools}} build tools
+        shell: pwsh
+        run: |
+          Install-Module VSSetup -Force
+          .\build\github_build_helper.ps1 -InstallVsBuildTools -Version ${{inputs.vs-build-tools}}
+          
+      # Upload fmt.lib source code
+      - name: Download artifact containing fmt.lib source code
+        uses: actions/download-artifact@v3
+        with:
+          name: fmt-lib-src
+          path: ./src
+       
+      # Build artifacts
+      - name: Build
+        run: msbuild .\build\build.proj /t:Build /p:VSBuildToolsVersion=${{inputs.vs-build-tools}} /p:BuildNo=${{inputs.build-no}}
+
+      # Upload arifacts to make them available for next job
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: Dist-${{inputs.pkg-suffix}}
+          path: |
+            ./dist/*
+            !./dist/.keep
+
+  # Test nuget package
+  test:
+    needs: build
+          
+    runs-on: windows-2022
+
+    steps:
+      # Output run ID - in case we need it to release the artifacts. 
+      # For information, also dump entire GitHub context.
+      - name: "Current run ID ${{github.run_id}}: Dump Context"
+        env:
+          GITHUB_CONTEXT: ${{toJson(github)}}
+        run: |
+          echo "Run ID: ${{github.run_id}}"
+          echo ${env:GITHUB_CONTEXT}
+
+      # Checkout source tree
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      # We need msbuild
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1
+       
+      # Install MSVC build tools
+      - name: Install MSVC ${{inputs.vs-build-tools}} build tools
+        shell: pwsh
+        run: |
+          Install-Module VSSetup -Force
+          .\build\github_build_helper.ps1 -InstallVsBuildTools -Version ${{inputs.vs-build-tools}}
+       
+      # Download arifacts to test
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: Dist-${{inputs.pkg-suffix}}
+          path: ./dist
+
+      # Run package integration tests
+      - name: Run Integration Tests
+        shell: pwsh
+        run: |
+          # Determine package ID and version
+          if ((Get-ChildItem ./dist/fmt.lib*.nupkg).Name -Match "^(fmt\.lib.*?)\.(.*)\.nupkg") { 
+            $pkgId = $Matches[1] ; $pkgVer = $Matches[2] 
+          }
+          else {
+            throw "Error determining package ID and version"
+          }
+          # Start testing
+          & msbuild .\build\build.proj /t:TestPackage /p:VSBuildToolsVersion=${{inputs.vs-build-tools}} /p:PackageID=$pkgId /p:PackageVersion=$pkgVer

@@ -1,18 +1,22 @@
+############################################################
+# Root workflow for building
+############################################################
 name: Build
+
+run-name: Build ${{github.run_id}}
 
 on: [push, workflow_dispatch]
 
 jobs:
-  
-  # Build main artifacts
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        vstools: [v140, v141, v142, v143]
-  
+  # Prepare for build
+  prepare:
     runs-on: windows-2022
-
+    # Job outputs
+    outputs: 
+      # Obtained build number
+      build-no: ${{steps.get-build-no.outputs.build-no}}
+      # fmt version
+      fmt-version: ${{steps.get-build-no.outputs.fmt-version}}
     steps:
       # Output run ID - in case we need it to release the artifacts. 
       # For information, also dump entire GitHub context.
@@ -21,45 +25,80 @@ jobs:
           GITHUB_CONTEXT: ${{toJson(github)}}
         run: |
           echo "Run ID: ${{github.run_id}}"
+          echo "Build No: ${{inputs.build-no}}"
           echo ${env:GITHUB_CONTEXT}
 
       # Checkout source tree
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       # We need msbuild
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v1
-       
-      # Install VS2015 build tools 
-      - name: Install VS2015 build tools
-        if: ${{ matrix.vstools == 'v140' }}
-        shell: pwsh
-        run: |
-            Write-Host "Running vswhere to get info about installed Visual Studio instances"
-            [xml]$vsInfo = vswhere -latest -format xml
-            $vsInstallerPath = $vsInfo.instances.instance.properties.setupEngineFilePath
-            Write-Host "Setup path: $vsInstallerPath"
-            $vsInstallDir = $vsInfo.instances.instance.installationPath
-            Write-Host "Install dir: $vsInstallDir"
-            $installerArgs = @("modify", "--installPath", "`"$vsInstallDir`"", "--add", "Microsoft.VisualStudio.Component.VC.140", "--downloadThenInstall", "--quiet")
-            Write-Host "Starting VS installer: `"$vsInstallerPath`" " + ($installerArgs -join " ")
-            $process = Start-Process $vsInstallerPath $installerArgs -Wait -PassThru
-            Write-Host "VS installer exit code: $($process.ExitCode)"
-            if ($process.ExitCode -ne 0) {
-                throw "Error: Installing Visual Studio build tools 2015 failed"
-            }
-      #  run: .\build\github_build_helper.ps1 InstallVsBuildTools2015
-       
-      # Build artifacts
-      - name: Build
-        run: msbuild .\build\build.proj /t:GithubBuild /p:SkipTests=true /p:VsBuildTools=${{matrix.vstools}}
 
-      # Upload arifacts to make them available for next job
-      - name: Upload artifacts
+      # Get build number from https://increment.build
+      - id: get-build-no
+        name: Get build number
+        shell: pwsh
+        env:
+          # Get key from repository secrets
+          APP_KEY: ${{secrets.INCREMENT_BUILD_KEY}}
+        run: |
+          $buildNo = Invoke-RestMethod https://increment.build/$env:APP_KEY
+          if ($buildNo -notmatch "^[0-9]+$") {
+            throw "Error: Not a number: $buildNo"
+          }
+          echo "Got build no: $buildNo"
+          echo "build-no=$buildNo" >> $env:GITHUB_OUTPUT
+          
+      # Get build properties from build.proj
+      - id: get-build-props
+        name: Get build properties
+        shell: cmd
+        run: msbuild .\build\build.proj /t:GitHubGetBuildProps /p:GitHubPropsFile=%GITHUB_OUTPUT%
+
+      # Download fmt.lib source code
+      - name: Download fmt.lib source code from ${{steps.get-build-props.outputs.fmt-download-url}} 
+        shell: pwsh
+        run: Invoke-WebRequest ${{steps.get-build-props.outputs.fmt-download-url}} -Outfile "${{steps.get-build-props.outputs.fmt-download-zip}}"
+        
+      # Upload fmt source code as artifact
+      - name: Upload fmt.lib source code as artifact
         uses: actions/upload-artifact@v3
         with:
-          name: Dist-${{matrix.vstools}}
-          path: |
-            ./dist/*
-            !./dist/.keep
+          name: fmt-lib-src
+          path: ${{steps.get-build-props.outputs.fmt-download-zip}}
+  
+  
+  # Build and artifacts in a matrix using various versions of VS build tools
+  build-and-test:
+    # Run after job "get-build-info"
+    needs: prepare
+    # Build with various versions of Visual Studio
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # TODO: Enable all
+          #- vs-build-tools: "14.0"
+          #  pkg-suffix: vc140
+          #- vs-build-tools: "14.1"
+          #  pkg-suffix: vc141
+          - vs-build-tools: "14.2"
+            pkg-suffix: vc142
+          - vs-build-tools: "14.3"
+            pkg-suffix: vc143
+    
+    # Reference reusable workflow to do the actual building and testing
+    uses: ./.github/workflows/sub-build-and-test.yml
+    
+    # Parameters for sub-workflowPass VS build tools version and package suffix as parameter to the sub-workflow
+    with:
+      # VS build tools version
+      vs-build-tools: ${{matrix.vs-build-tools}}
+      
+      # Package suffix 
+      pkg-suffix: ${{matrix.pkg-suffix}}
+      
+      # Build number
+      build-no: ${{needs.prepare.outputs.build-no}}

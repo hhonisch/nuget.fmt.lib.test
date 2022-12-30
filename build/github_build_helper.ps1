@@ -1,10 +1,25 @@
 #Requires -Version 5
 
 param(
-    # Command
-    [Parameter(Mandatory)]
-    [ValidateSet("StoreReleaseMetaInfo", "StoreReleaseNotes", "InstallVsBuildTools2015")]
-    [string] $command
+    # Install VS build tools
+    [Parameter(Mandatory = $true, ParameterSetName = "InstallVSBuildTools")]
+    [switch] $InstallVsBuildTools,
+    # Get build properties
+    [Parameter(Mandatory = $true, ParameterSetName = "GetBuildProps")]
+    [string] $GetBuildProps,
+    # VS build tools version
+    [Parameter(Mandatory = $true, ParameterSetName = "InstallVSBuildTools")]
+    [ValidateSet("14.0", "14.1", "14.2", "14.3")]
+    [string] $Version,
+    # Fmt version
+    [Parameter(Mandatory = $true, ParameterSetName = "GetBuildProps")]
+    [string] $FmtVersion,
+    # Fmt download URL
+    [Parameter(Mandatory = $true, ParameterSetName = "GetBuildProps")]
+    [string] $FmtDownloadUrl,
+    # Fmt download ZIP filename
+    [Parameter(Mandatory = $true, ParameterSetName = "GetBuildProps")]
+    [string] $FmtDownloadZip
 )
 
 
@@ -21,101 +36,84 @@ $ErrorActionPreference = "Stop"
 # Strict mode
 Set-StrictMode -Version Latest
 
-
-# Store release info in dist
-function StoreReleaseMetaInfo() {
-    Write-Host "Store release meta info"
-    $path = Join-Path $PSScriptRoot "..\dist\meta.json"
-
-    # Read version
-    $verXmlPath = Join-Path $PSScriptRoot version.xml
-    Write-Host "Reading version from $verXmlPath..."
-    [xml] $verXml = Get-Content $verXmlPath
-    $verStr = $verXml.version
-
-    # Get commit hash
-    $commitHash = $env:GITHUB_SHA
-
-    # Get run ID
-    $runId = $env:GITHUB_RUN_ID
-
-    # Write JSON to file
-    Write-Host "Writing to $path..."
-    $json = [ordered]@{ version = $verStr; commitHash = $commitHash; githubRunId = $runId }
-    ConvertTo-Json $json -Compress | Out-File $path -Encoding ascii
-
-    Write-Host "Done: Store release meta info"
+# Visual studio build tools data
+$VSBuildTools = @{
+    "14.0" = @{PackageId = "Microsoft.VisualStudio.Component.VC.140" }
+    "14.1" = @{PackageId = "Microsoft.VisualStudio.Component.VC.v141.x86.x64" }
+    "14.2" = @{PackageId = "Microsoft.VisualStudio.ComponentGroup.VC.Tools.142.x86.x64" }
+    "14.3" = @{PackageId = "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" }
 }
 
 
-# Store release notes in dist
-function StoreReleaseNotes() {
-    Write-Host "Store release notes"
 
-    $srcPath = Join-Path $PSScriptRoot "..\RELEASE_NOTES.md"
-    $dstPath = Join-Path $PSScriptRoot "..\dist\RELEASE_NOTES.md"
-    Write-Host "Reading from $srcPath..."
-    Write-Host "Writing to $dstPath..."
-    [System.IO.StreamReader] $srcReader = $null
-    [System.IO.StreamWriter]  $dstWriter = $null
-    try {
-        $srcReader = [System.IO.StreamReader]::new($srcPath)
-        $dstWriter = [System.IO.StreamWriter]::new($dstPath)
-        while ($srcReader.EndOfStream -eq $false) {
-            $line = $srcReader.ReadLine()
-            if ($line -match "^\s*--- End of Release Notes ---\s*$") {
-                break
-            }
-            $dstWriter.WriteLine($line)
-        }
+# Install VS build tools
+function InstallVsBuildTools($buildToolsVersion) {
+    Write-Host "Installing Visual Studio build tools $buildToolsVersion"
 
-    }
-    finally {
-        if ($srcReader) {
-            $srcReader.Close()
-        }
-        if ($dstWriter) {
-            $dstWriter.Close()
-        }
-    }
-
-    Write-Host "Done: Store release notes"
-}
-
-
-# Store release notes in dist
-function InstallVsBuildTools2015() {
-    Write-Host "Installing Visual Studio build tools 2015"
-
+    # Get info about current VS installation using vswhere
     Write-Host "  Running vswhere to get info about installed Visual Studio instances"
     [xml]$vsInfo = vswhere -latest -format xml
     $vsInstallerPath = $vsInfo.instances.instance.properties.setupEngineFilePath
     Write-Host "  Setup path: $vsInstallerPath"
     $vsInstallDir = $vsInfo.instances.instance.installationPath
     Write-Host "  Install dir: $vsInstallDir"
+
+    # Check for installed packages
+    Write-Host "  Checking for installed build tools version $buildToolsVersion"
+    $setupInst = Get-VSSetupInstance -Path $vsInstallDir
+    $buildToolsInstalled = $false
+    $requiredPkgId = $VSBuildTools[$buildToolsVersion].PackageId
+    foreach ($package in $setupInst.Packages) {
+        if ( $package.Id -eq $requiredPkgId) {
+            $buildToolsInstalled = $true
+            break
+        }
+    }
+    if ($buildToolsInstalled) {
+        Write-Host "  VS build tools $buildToolsVersion are already installed - no action required"
+        return
+    }
+
+    # Installing missing build tools
+    Write-Host "  VS build tools $buildToolsVersion not found - installing..."
     $installerArgs = @("modify", "--installPath", "`"$vsInstallDir`"", "--add", "Microsoft.VisualStudio.Component.VC.140", "--downloadThenInstall", "--quiet")
+    $installerArgsStr = $installerArgs -join " "
+    Write-Host "  Starting VS installer: `"$vsInstallerPath`" $installerArgsStr"
     $process = Start-Process $vsInstallerPath $installerArgs -Wait -PassThru
     Write-Host "  VS installer exit code: $($process.ExitCode)"
     if ($process.ExitCode -ne 0) {
-        throw "Error: Installing Visual Studio build tools 2015 failed"
+        throw "Error: Installing Visual Studio build tools version $vsInstallDir failed"
     }
-    Write-Host "Done: Installing Visual Studio build tools 2015"
+    Write-Host "Done: Installing Visual Studio build tools version $vsInstallDir succeeded"
+}
+
+
+# Write build property
+function WriteBuildProp($OutputFile, $PropName, $PropValue) {
+    Write-Host "  Writing: $PropName=$PropValue"
+    "$PropName=$PropValue" | Out-File $OutputFile -Append -Encoding UTF8
+}
+
+
+# Get build properties
+function GetBuildProps($OutputFile, $FmtVersion, $FmtDownloadUrl, $FmtDownloadZip) {
+    Write-Host "Writing build properties to $OutputFile"
+    WriteBuildProp $OutputFile "fmt-version" $FmtVersion
+    WriteBuildProp $OutputFile "fmt-download-url" $FmtDownloadUrl
+    WriteBuildProp $OutputFile "fmt-download-zip" $FmtDownloadZip
 }
 
 
 # Main function
-function Main() {
-    if ($command -ieq "StoreReleaseMetaInfo") {
-        StoreReleaseMetaInfo
+function Main {
+    # Handle installing VS build tools
+    if ($InstallVsBuildTools) {
+        InstallVsBuildTools $Version
     }
-    elseif ($command -ieq "StoreReleaseNotes") {
-        StoreReleaseNotes
-    }
-    elseif ($command -ieq "InstallVsBuildTools2015") {
-        InstallVsBuildTools2015
-    }
-    else {
-        throw "Unkown command: $command"
+
+    # Output build properties
+    if ($GetBuildProps) {
+        GetBuildProps $GetBuildProps $FmtVersion $FmtDownloadUrl $FmtDownloadZip
     }
 }
 
