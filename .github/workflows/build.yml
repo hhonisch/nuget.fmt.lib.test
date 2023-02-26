@@ -51,35 +51,44 @@ jobs:
           echo "Got build no: $buildNo"
           echo "build-no=$buildNo" >> $env:GITHUB_OUTPUT
           
-      # Get build properties from build.proj
-      - id: get-build-props
-        name: Get build properties
+      # Build release files
+      - id: build-release-files
+        name: Build release files
         shell: cmd
-        run: msbuild .\build\build.proj /t:GitHubGetBuildProps /p:GitHubPropsFile=%GITHUB_OUTPUT%
+        run: msbuild .\build\build.proj /t:BuildGithubReleaseFiles /p:GitHubPropsFile=%GITHUB_OUTPUT% /p:BuildNo=${{steps.get-build-no.outputs.build-no}}
 
       # Download fmt.lib source code
-      - name: Download fmt.lib source code from ${{steps.get-build-props.outputs.fmt-download-url}} 
+      - name: Download fmt.lib source code from ${{steps.build-release-files.outputs.release-info.fmt-download-url}} 
         shell: pwsh
-        run: Invoke-WebRequest ${{steps.get-build-props.outputs.fmt-download-url}} -Outfile "${{steps.get-build-props.outputs.fmt-download-zip}}"
+        run: | 
+          Invoke-WebRequest ${{fromJson(steps.build-release-files.outputs.release-info).fmt-download-url}} -Outfile "./src/${{fromJson(steps.build-release-files.outputs.release-info).fmt-download-zip}}"
         
-      # Upload fmt source code as artifact
+      # Upload fmt.lib source code as artifact
       - name: Upload fmt.lib source code as artifact
         uses: actions/upload-artifact@v3
         with:
           name: fmt-lib-src
-          path: ${{steps.get-build-props.outputs.fmt-download-zip}}
+          path: ./src/${{fromJson(steps.build-release-files.outputs.release-info).fmt-download-zip}}
+        
+      # Upload release meta files
+      - name: Upload release meta files as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-meta
+          path: |
+            ./release-info.json
+            ./RELEASE_NOTES.md
   
   
-  # Build and artifacts in a matrix using various versions of VS build tools
+  # Build artifacts in a matrix using various versions of VS build tools
   build-and-test:
-    # Run after job "get-build-info"
+    # Run after job "prepare"
     needs: prepare
     # Build with various versions of Visual Studio
     strategy:
       fail-fast: false
       matrix:
         include:
-          # TODO: Enable all
           #- vs-build-tools: "14.0"
           #  pkg-suffix: vc140
           #- vs-build-tools: "14.1"
@@ -92,7 +101,7 @@ jobs:
     # Reference reusable workflow to do the actual building and testing
     uses: ./.github/workflows/sub-build-and-test.yml
     
-    # Parameters for sub-workflowPass VS build tools version and package suffix as parameter to the sub-workflow
+    # Pass parameters to the sub-workflow
     with:
       # VS build tools version
       vs-build-tools: ${{matrix.vs-build-tools}}

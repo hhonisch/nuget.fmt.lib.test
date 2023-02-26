@@ -24,6 +24,8 @@
     <VSBuildToolsVersionCMake Condition="'$(VSBuildToolsVersion)'!=''">v$(VSBuildToolsVersion.Replace(".",""))</VSBuildToolsVersionCMake>
     <!-- Version of FMT library -->
     <FmtVersion>9.1.0</FmtVersion>
+    <!-- Package version base -->
+    <PackageVersionBase>$(FmtVersion)</PackageVersionBase>
     <!-- Where to download FMT sources from -->
     <FmtDownloadUrl>https://github.com/fmtlib/fmt/releases/download/$(FmtVersion)/fmt-$(FmtVersion).zip</FmtDownloadUrl>
     <!-- Name for downloaded ZIP file containing FMT source code -->
@@ -44,10 +46,22 @@
     <PackageID Condition="'$(VSBuildToolsVersion)'!=''">fmt.lib-vc$(VSBuildToolsVersion.Replace(".",""))</PackageID>
     <PackageID Condition="'$(VSBuildToolsVersion)'==''">fmt.lib</PackageID>
     <!-- Package version -->
-    <PackageVersion Condition="'$(BuildNo)'!=''">$(FmtVersion)-build.$(BuildNo)</PackageVersion>
-    <PackageVersion Condition="'$(BuildNo)'==''">$(FmtVersion)-snapshot</PackageVersion>
+    <PackageVersion Condition="'$(BuildNo)'!=''">$(PackageVersionBase)-alpha</PackageVersion>
+    <PackageVersion Condition="'$(BuildNo)'==''">$(PackageVersionBase)-snapshot</PackageVersion>
+    <!-- Git Repository URL -->
+    <GitRepository>GitRepoTBD</GitRepository>
+    <!-- Git Branch -->
+    <GitBranch>GitBranchTBD</GitBranch>
+    <!-- Git Commit -->
+    <GitCommit>GitCommitTBD</GitCommit>
     <!-- Github properties file -->
     <GitHubPropsFile>$(MSBuildThisFileDirectory)github.props.txt</GitHubPropsFile>
+    <!-- Github release info file -->
+    <GitHubReleaseInfoFile>$(RootDir)\release-info.json</GitHubReleaseInfoFile>
+    <!-- Github release notes template -->
+    <GitHubReleaseNotesTemplate>$(RootDir)\build\RELEASE_NOTES.template.md</GitHubReleaseNotesTemplate>
+    <!-- Github release notes template -->
+    <GitHubReleaseNotesOutput>$(RootDir)\RELEASE_NOTES.md</GitHubReleaseNotesOutput>
   </PropertyGroup>
   
 
@@ -95,9 +109,10 @@
   </Target>
 
 
-  <!-- Get build properties for GitHub build-->
-  <Target Name="GitHubGetBuildProps">
-    <Exec Command="powershell.exe –NonInteractive –ExecutionPolicy Unrestricted -File &quot;$(MSBuildThisFileDirectory)github_build_helper.ps1&quot; -GetBuildProps &quot;$(GitHubPropsFile)&quot; -FmtVersion &quot;$(FmtVersion)&quot; -FmtDownloadUrl &quot;$(FmtDownloadUrl)&quot; -FmtDownloadZip &quot;$(FmtDownloadZip)&quot;"/>
+  <!-- Build Github release files -->
+  <Target Name="BuildGithubReleaseFiles">
+    <Exec Command="powershell.exe –NonInteractive –ExecutionPolicy Unrestricted -File &quot;$(MSBuildThisFileDirectory)github_build_helper.ps1&quot; -BuildReleaseInfo -GitHubPropsFile &quot;$(GitHubPropsFile)&quot; -ReleaseInfoFile &quot;$(GitHubReleaseInfoFile)&quot; -FmtVersion &quot;$(FmtVersion)&quot; -FmtDownloadUrl &quot;$(FmtDownloadUrl)&quot; -FmtDownloadZip &quot;$(FmtDownloadZip)&quot; -PackageVersion &quot;$(PackageVersion)&quot;"/>
+    <Exec Command="powershell.exe –NonInteractive –ExecutionPolicy Unrestricted -File &quot;$(MSBuildThisFileDirectory)github_build_helper.ps1&quot; -BuildReleaseNotes -ReleaseNotesTemplate &quot;$(GitHubReleaseNotesTemplate)&quot; -ReleaseNotesOutput &quot;$(GitHubReleaseNotesOutput)&quot; -FmtVersion &quot;$(FmtVersion)&quot; -PackageVersion &quot;$(PackageVersion)&quot;"/>
   </Target>
 
 
@@ -199,7 +214,6 @@
     <Copy SourceFiles="@(ExportFmt_LibsX86)" DestinationFolder="$(BinDir)\x86"/>
     <Copy SourceFiles="@(ExportFmt_LibsX64)" DestinationFolder="$(BinDir)\x64"/>
     <Copy SourceFiles="@(ExportFmt_Headers)" DestinationFolder="$(BinDir)\include"/>
-    <Copy SourceFiles="$(FmtSourceDir)\README.rst" DestinationFiles="$(BinDir)\content\readme.md"/>
     <Copy SourceFiles="$(FmtSourceDir)\LICENSE.rst" DestinationFiles="$(BinDir)\content\LICENSE.txt"/>
   </Target>
 
@@ -207,12 +221,12 @@
   <!-- Build NuGet Package -->
   <Target Name="BuildPackage">
     <!-- Generate package files -->
-    <Exec Command="powershell.exe –NonInteractive –ExecutionPolicy Unrestricted -File &quot;$(MSBuildThisFileDirectory)build_helper.ps1&quot; -GeneratePackageFiles -PackageID $(PackageID) -PackageVersion $(PackageVersion) -InputDir &quot;$(PackageDir)&quot;"/>
+    <Exec Command="powershell.exe –NonInteractive –ExecutionPolicy Unrestricted -File &quot;$(MSBuildThisFileDirectory)build_helper.ps1&quot; -GeneratePackageFiles -PackageID $(PackageID) -PackageVersion $(PackageVersion) -InputDir &quot;$(PackageDir)&quot; -GitRepository $(GitRepository) -GitBranch $(GitBranch) -GitCommit $(GitCommit)"/>
     
     <!-- Build nuget package -->
     <Exec Command="nuget pack" WorkingDirectory="$(PackageDir)"/>
     <ItemGroup>
-      <PackageFiles Include="$(PackageDir)\$(PackageID).$(PackageVersion).nupkg"/>
+      <PackageFiles Include="$(PackageDir)\$(PackageID).*.nupkg"/>
     </ItemGroup>
     <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(DistDir)"/>
   </Target>

@@ -1,0 +1,1 @@
+This [NuGet](https://www.nuget.org/) package installs [{fmt} release %FMT_VERSION%](https://github.com/fmtlib/fmt/releases/tag/%FMT_VERSION%).

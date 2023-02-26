@@ -15,7 +15,8 @@
     <developmentDependency>true</developmentDependency>
     <releaseNotes>
     </releaseNotes>
-    <copyright>Â© 2012 - present, Victor Zverovich</copyright>
+    <copyright>© 2012 - present, Victor Zverovich</copyright>
+    <repository type="git" url="xxx" branch="xxx" commit="xxx"/>
   </metadata>
   <files>
     <file src="images\*.png" target="images" />
@@ -24,6 +25,6 @@
     <file src="..\..\bin\x64\*.lib" target="build\native\x64" />
     <file src="..\..\bin\include\*" target="build\native\include\fmt" />
     <file src="..\..\bin\content\LICENSE.txt" target="LICENSE.txt" />
-    <file src="..\..\bin\content\readme.md" target="docs\readme.md" />
+    <file src="docs\readme.md" target="docs\readme.md" />
   </files>
 </package>

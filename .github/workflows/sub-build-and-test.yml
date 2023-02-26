@@ -52,7 +52,7 @@ jobs:
           Install-Module VSSetup -Force
           .\build\github_build_helper.ps1 -InstallVsBuildTools -Version ${{inputs.vs-build-tools}}
           
-      # Upload fmt.lib source code
+      # Upload artifact containing fmt.lib source code
       - name: Download artifact containing fmt.lib source code
         uses: actions/download-artifact@v3
         with:
@@ -61,7 +61,7 @@ jobs:
        
       # Build artifacts
       - name: Build
-        run: msbuild .\build\build.proj /t:Build /p:VSBuildToolsVersion=${{inputs.vs-build-tools}} /p:BuildNo=${{inputs.build-no}}
+        run: msbuild .\build\build.proj /t:Build /p:VSBuildToolsVersion=${{inputs.vs-build-tools}} /p:BuildNo=${{inputs.build-no}} /p:GitRepository=${{github.repositoryUrl}} /p:GitBranch=${{github.ref}} /p:GitCommit=${{github.sha}}
 
       # Upload arifacts to make them available for next job
       - name: Upload artifacts

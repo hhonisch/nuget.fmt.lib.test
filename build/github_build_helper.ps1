@@ -4,22 +4,42 @@ param(
     # Install VS build tools
     [Parameter(Mandatory = $true, ParameterSetName = "InstallVSBuildTools")]
     [switch] $InstallVsBuildTools,
-    # Get build properties
-    [Parameter(Mandatory = $true, ParameterSetName = "GetBuildProps")]
-    [string] $GetBuildProps,
+    # Build release info
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseInfo")]
+    [switch] $BuildReleaseInfo,
+    # Build release notes
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseNotes")]
+    [switch] $BuildReleaseNotes,
     # VS build tools version
     [Parameter(Mandatory = $true, ParameterSetName = "InstallVSBuildTools")]
     [ValidateSet("14.0", "14.1", "14.2", "14.3")]
     [string] $Version,
+    # GitHub properties file
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseInfo")]
+    [string] $GitHubPropsFile,
+    # Release info file
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseInfo")]
+    [string] $ReleaseInfoFile,
+    # Nuget package version
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseInfo")]
+    [Parameter(ParameterSetName = "BuildReleaseNotes")]
+    [string] $PackageVersion,
     # Fmt version
-    [Parameter(Mandatory = $true, ParameterSetName = "GetBuildProps")]
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseInfo")]
+    [Parameter(ParameterSetName = "BuildReleaseNotes")]
     [string] $FmtVersion,
     # Fmt download URL
-    [Parameter(Mandatory = $true, ParameterSetName = "GetBuildProps")]
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseInfo")]
     [string] $FmtDownloadUrl,
     # Fmt download ZIP filename
-    [Parameter(Mandatory = $true, ParameterSetName = "GetBuildProps")]
-    [string] $FmtDownloadZip
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseInfo")]
+    [string] $FmtDownloadZip,
+    # Release notes template
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseNotes")]
+    [string] $ReleaseNotesTemplate,
+    # Release notes output
+    [Parameter(Mandatory = $true, ParameterSetName = "BuildReleaseNotes")]
+    [string] $ReleaseNotesOutput
 )
 
 
@@ -88,21 +108,47 @@ function InstallVsBuildTools($buildToolsVersion) {
 }
 
 
-# Write build property
-function WriteBuildProp($OutputFile, $PropName, $PropValue) {
-    Write-Host "  Writing: $PropName=$PropValue"
-    "$PropName=$PropValue" | Out-File $OutputFile -Append -Encoding UTF8
+# Build release info
+function BuildReleaseInfo($gitHubPropsFile, $releaseInfoFile, $packageVersion, $fmtVersion, $fmtDownloadUrl, $fmtDownloadZip) {
+
+    # Get commit hash
+    $commitHash = $env:GITHUB_SHA
+
+    # Get run ID
+    $runId = $env:GITHUB_RUN_ID
+
+    # Build release info
+    $json = [ordered]@{
+        "package-version"    = $packageVersion
+        "fmt-version"        = $fmtVersion
+        "fmt-download-url"   = $fmtDownloadUrl
+        "fmt-download-zip"   = Split-Path -Leaf $fmtDownloadZip
+        "github-run-id"      = $runId
+        "github-commit-hash" = $commitHash
+    }
+    $jsonStr = ConvertTo-Json $json -Compress
+
+    # Write release info
+    Write-Host "  Release info: $jsonStr"
+    Write-Host "  Appending release info to $gitHubPropsFile"
+    "release-info=$jsonStr" | Out-File $gitHubPropsFile -Append -Encoding ascii
+    Write-Host "  Writing release info to $releaseInfoFile"
+    $jsonStr | Out-File $releaseInfoFile -Encoding ascii
 }
 
 
-# Get build properties
-function GetBuildProps($OutputFile, $FmtVersion, $FmtDownloadUrl, $FmtDownloadZip) {
-    Write-Host "Writing build properties to $OutputFile"
-    WriteBuildProp $OutputFile "fmt-version" $FmtVersion
-    WriteBuildProp $OutputFile "fmt-download-url" $FmtDownloadUrl
-    WriteBuildProp $OutputFile "fmt-download-zip" $FmtDownloadZip
-}
+# Build rekease notes
+function BuildReleaseNotes($templatePath, $outputPath, $packageVersion, $fmtVersion) {
+    Write-Host "  Reading release notes template from $templatePath"
+    $releaseNotes = Get-Content $templatePath
 
+    Write-Host "  Replacing placeholders..."
+    $releaseNotes = $releaseNotes -creplace "%FMT_VERSION%", $fmtVersion
+    $releaseNotes = $releaseNotes -creplace "%PACKAGE_VERSION%", $packageVersion
+
+    Write-Host "  Writing release notes to $templatePath"
+    $releaseNotes | Out-File -FilePath $outputPath -Encoding utf8
+}
 
 # Main function
 function Main {
@@ -111,9 +157,14 @@ function Main {
         InstallVsBuildTools $Version
     }
 
-    # Output build properties
-    if ($GetBuildProps) {
-        GetBuildProps $GetBuildProps $FmtVersion $FmtDownloadUrl $FmtDownloadZip
+    # Build release info
+    if ($BuildReleaseInfo) {
+        BuildReleaseInfo $GitHubPropsFile $ReleaseInfoFile $PackageVersion $FmtVersion $FmtDownloadUrl $FmtDownloadZip
+    }
+
+    # Build release notes
+    if ($BuildReleaseNotes) {
+        BuildReleaseNotes $ReleaseNotesTemplate $ReleaseNotesOutput $PackageVersion $FmtVersion
     }
 }
 

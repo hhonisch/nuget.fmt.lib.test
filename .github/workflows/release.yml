@@ -5,7 +5,7 @@ name: Create Release from Build
 on:
   workflow_dispatch:
     inputs:
-      buildRunId:
+      build-run-id:
         description: 'Github Run ID of build run of which to use artifacts'
         required: true
 
@@ -14,80 +14,75 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      #- name: View context attributes
-      #  uses: actions/github-script@0.9.0
-      #  with:
-      #    script: |
-      #      console.log(context)
+      - name: View context attributes
+        uses: actions/github-script@v6
+        with:
+          script: console.log(context)
        
       # Get artifacts URL from given build run
-      - name: Get list of artifacts to download
-        id: get-dist-artifacts
+      - name: Get list of build run artifacts
+        id: get-artifacts
         uses: actions/github-script@v6
         env:
-          MY_ARTIFACT_PREFIX: "Dist"
-          MY_RUN_ID: ${{github.event.inputs.buildRunId}}
+          MY_RUN_ID: ${{github.event.inputs.build-run-id}}
         with:
           script: |
             try {
+              console.log("Retrieving list of artifacts")
               // Get list of artifacts for given run 
-              const opts = github.actions.listWorkflowRunArtifacts.endpoint.merge({
+              const opts = github.rest.actions.listWorkflowRunArtifacts.endpoint.merge({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                run_id: process.env.MY_RUN_ID
+                run_id: process.env.MY_RUN_ID.trim()
               })
               const artifacts = await github.paginate(opts)
-
-              // Find artifacts with desired name
               var distArtifacts = []
               for(const artifact of artifacts) {
-                if(artifact.name.startsWith(process.env.MY_ARTIFACT_PREFIX)) {
-                  distArtifacts.push(artifact)
-                }
+                console.log("  Found: " + artifact.name)
+                distArtifacts.push(artifact)
               }
               if (distArtifacts.length == 0) {
-                throw "Artifact not found"
+                throw "No artifacts found"
               }
               return distArtifacts
             } catch (error) {
               core.setFailed(error.message)
             }
             
-      # Download artifacts
-      - name: Download artifacts
-        id: download-build-artifacts
-        if: steps.get-dist-artifacts.outputs.result.length > 0
+      # Prepare release from given build run
+      - name: Prepare release
+        id: prepare-release
+        shell: pwsh
         env: 
-          DEBUG: ${{toJson(steps.get-dist-artifacts.output)}}
-        shell: cmd
-        run: echo %DEBUG%
-        #run: |
-        #  MY_DOWNLOAD_URL=${{fromJson(steps.get-dist-artifact-url.outputs.result).archive_download_url}}
-        #  echo "Downloading $MY_DOWNLOAD_URL"
-        #  curl -L -o Dist.zip -H "Authorization: token ${{secrets.GITHUB_TOKEN}}" $MY_DOWNLOAD_URL
-        #  echo "Unzipping..."
-        #  unzip Dist.zip -d dist
-        #  META=$(cat ./dist/meta.json)
-        #  echo "::set-output name=result::$META"
-
-      # Dump build info
-      - name: Dump build info
+          ARTIFACTS: ${{steps.get-artifacts.outputs.result}}
         run: |
-          echo "Commit hash: ${{fromJson(steps.download-build-artifacts.outputs.result).commitHash}}"
-          echo "Version: ${{fromJson(steps.download-build-artifacts.outputs.result).version}}"
+          # Download artifacts to "dist"
+          $artifacts = ConvertFrom-Json $env:ARTIFACTS
+          foreach($artifact in $artifacts) {
+            echo "Downloading $($artifact.name)"
+            & curl -L -o "$($artifact.name).zip" -H "Authorization: token ${{secrets.GITHUB_TOKEN}}" $artifact.archive_download_url
+            & unzip "$($artifact.name).zip" -d "dist"
+          }
+          
+          # Read release-info.json and make it available to workflow
+          $releaseInfo = Get-Content "dist\release-info.json"
+          echo "release-info=$releaseInfo" >> $env:GITHUB_OUTPUT
+          
+          # DEBUG
+          dir dist
 
       # Create release from build info
-      #- name: Create Release
-      #  id: create_release
-      #  uses: ncipollo/release-action@v1
-      #  env:
-      #      GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-      #  with:
-      #    tag: v${{fromJson(steps.download-build-artifacts.outputs.result).version}} 
-      #    name: "Chocolatey Package: Microsoft Help Workshop ${{fromJson(steps.download-build-artifacts.outputs.result).version}}"
-      #    commit: ${{fromJson(steps.download-build-artifacts.outputs.result).commitHash}}
-      #    bodyFile: ./dist/RELEASE_NOTES.md
-      #    artifacts: ./dist/help-workshop.${{fromJson(steps.download-build-artifacts.outputs.result).version}}.nupkg
-      #    draft: true
-      #    prerelease: true
-      #    token: ${{secrets.GITHUB_TOKEN}}
+      - name: Create Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        env:
+            GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        with:
+          tag: v${{fromJson(steps.prepare-release.outputs.release-info).package-version}} 
+          name: "{fmt} Nuget Packages v${{fromJson(steps.prepare-release.outputs.release-info).package-version}}"
+          commit: ${{fromJson(steps.prepare-release.outputs.release-info).github-commit-hash}}
+          bodyFile: ./dist/RELEASE_NOTES.md
+          artifacts: ./dist/*.nupkg,./dist/*.zip
+          draft: true
+          prerelease: true
+          token: ${{secrets.GITHUB_TOKEN}}

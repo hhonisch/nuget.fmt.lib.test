@@ -18,7 +18,16 @@ param(
     # Package version
     [Parameter(Mandatory = $true, ParameterSetName = "GeneratePackageFiles")]
     [Parameter(Mandatory = $true, ParameterSetName = "GenerateTestBuildTargets")]
-    [string] $PackageVersion
+    [string] $PackageVersion,
+    # Git repository URL
+    [Parameter(Mandatory = $true, ParameterSetName = "GeneratePackageFiles")]
+    [string] $GitRepository,
+    # Git branch
+    [Parameter(Mandatory = $true, ParameterSetName = "GeneratePackageFiles")]
+    [string] $GitBranch,
+    # Git commit
+    [Parameter(Mandatory = $true, ParameterSetName = "GeneratePackageFiles")]
+    [string] $GitCommit
 )
 
 
@@ -37,7 +46,7 @@ Set-StrictMode -Version Latest
 
 
 # Generate package files
-function GeneratePackageFiles($packageDir, $packageID, $packageVersion) {
+function GeneratePackageFiles($packageDir, $packageID, $packageVersion, $gitRepository, $gitBranch, $gitCommit) {
     Write-Host "Generating NuGet package files in $packageDir..."
 
     # Create nuspec file
@@ -47,6 +56,9 @@ function GeneratePackageFiles($packageDir, $packageID, $packageVersion) {
     [xml] $nuspecXml = Get-Content $nuspecTemplatePath
     $nuspecXml.package.metadata.id = $packageID
     $nuspecXml.package.metadata.version = $packageVersion
+    $nuspecXml.package.metadata.repository.url = $gitRepository
+    $nuspecXml.package.metadata.repository.branch = $gitBranch
+    $nuspecXml.package.metadata.repository.commit = $gitCommit
     $nuspecXml.Save($nuspecPath)
 
     # Create targets file
@@ -74,7 +86,7 @@ function GenerateTestBuildTargets($buildDir, $packageID, $packageVersion) {
 function Main {
     # Generate package files
     if ($GeneratePackageFiles) {
-        GeneratePackageFiles $InputDir $PackageID $PackageVersion
+        GeneratePackageFiles $InputDir $PackageID $PackageVersion $GitRepository $GitBranch $GitCommit
     }
 
     # Generate build targets for testing
